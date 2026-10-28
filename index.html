@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Consent Location Sharing Demo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    input, select, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #d0d7de;
+      font-size: 16px;
+    }
+
+    button {
+      background: #0d6efd;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button.secondary {
+      background: #198754;
+    }
+
+    .output {
+      margin-top: 12px;
+      background: #111827;
+      color: #e5e7eb;
+      padding: 12px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: monospace;
+      min-height: 50px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h2>Create user</h2>
+      <input id="userId" placeholder="User ID (example: alice)" />
+      <input id="userName" placeholder="Name" />
+      <input id="userPhone" placeholder="Phone (optional)" />
+      <button id="createUserBtn">Create user</button>
+      <div id="createUserOutput" class="output"></div>
+    </div>
+
+    <div class="card">
+      <h2>Grant permission</h2>
+      <input id="ownerUserId" placeholder="Owner user ID" />
+      <input id="viewerUserId" placeholder="Viewer user ID" />
+      <select id="permissionType">
+        <option value="family">Family</option>
+        <option value="emergency">Emergency</option>
+        <option value="work">Work</option>
+      </select>
+      <input id="expiresAt" type="datetime-local" />
+      <button id="grantPermissionBtn" class="secondary">Grant permission</button>
+      <div id="permissionOutput" class="output"></div>
+    </div>
+
+    <div class="card">
+      <h2>Send location</h2>
+      <input id="locationUserId" placeholder="User ID whose location to share" />
+      <button id="getLocationBtn">Get browser location</button>
+      <button id="sendLocationBtn" class="secondary">Send location</button>
+      <div id="locationOutput" class="output"></div>
+    </div>
+
+    <div class="card">
+      <h2>View shared location</h2>
+      <input id="viewOwnerId" placeholder="Owner user ID" />
+      <input id="viewViewerId" placeholder="Viewer user ID" />
+      <button id="viewLocationBtn">Check location</button>
+      <div id="viewLocationOutput" class="output"></div>
+    </div>
+
+    <div class="card">
+      <h2>Revoke permission</h2>
+      <input id="revokeOwnerId" placeholder="Owner user ID" />
+      <input id="revokeViewerId" placeholder="Viewer user ID" />
+      <button id="revokePermissionBtn">Revoke permission</button>
+      <div id="revokeOutput" class="output"></div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      currentLat: null,
+      currentLng: null
+    };
+
+    function show(id, text) {
+      document.getElementById(id).textContent = typeof text === "string" ? text : JSON.stringify(text, null, 2);
+    }
+
+    document.getElementById("createUserBtn").addEventListener("click", async () => {
+      const payload = {
+        id: document.getElementById("userId").value.trim(),
+        name: document.getElementById("userName").value.trim(),
+        phone: document.getElementById("userPhone").value.trim()
+      };
+
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      show("createUserOutput", data);
+    });
+
+    document.getElementById("grantPermissionBtn").addEventListener("click", async () => {
+      const payload = {
+        ownerUserId: document.getElementById("ownerUserId").value.trim(),
+        viewerUserId: document.getElementById("viewerUserId").value.trim(),
+        permissionType: document.getElementById("permissionType").value,
+        expiresAt: document.getElementById("expiresAt").value
+          ? new Date(document.getElementById("expiresAt").value).toISOString()
+          : null
+      };
+
+      const res = await fetch("/api/permissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      show("permissionOutput", data);
+    });
+
+    document.getElementById("getLocationBtn").addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        show("locationOutput", "Geolocation is not supported in this browser.");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          state.currentLat = position.coords.latitude;
+          state.currentLng = position.coords.longitude;
+
+          show("locationOutput", {
+            latitude: state.currentLat,
+            longitude: state.currentLng,
+            accuracyMeters: position.coords.accuracy
+          });
+        },
+        (err) => {
+          show("locationOutput", "Location access denied or unavailable: " + err.message);
+        }
+      );
+    });
+
+    document.getElementById("sendLocationBtn").addEventListener("click", async () => {
+      const userId = document.getElementById("locationUserId").value.trim();
+
+      if (state.currentLat === null || state.currentLng === null) {
+        show("locationOutput", "Please click 'Get browser location' first.");
+        return;
+      }
+
+      const res = await fetch("/api/location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          latitude: state.currentLat,
+          longitude: state.currentLng,
+          accuracyMeters: 20
+        })
+      });
+
+      const data = await res.json();
+      show("locationOutput", data);
+    });
+
+    document.getElementById("viewLocationBtn").addEventListener("click", async () => {
+      const ownerUserId = document.getElementById("viewOwnerId").value.trim();
+      const viewerUserId = document.getElementById("viewViewerId").value.trim();
+
+      const res = await fetch(`/api/location/${ownerUserId}/${viewerUserId}`);
+
+      const data = await res.json();
+      show("viewLocationOutput", data);
+    });
+
+    document.getElementById("revokePermissionBtn").addEventListener("click", async () => {
+      const payload = {
+        ownerUserId: document.getElementById("revokeOwnerId").value.trim(),
+        viewerUserId: document.getElementById("revokeViewerId").value.trim()
+      };
+
+      const res = await fetch("/api/permissions/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      show("revokeOutput", data);
+    });
+  </script>
+</body>
+  </html>
